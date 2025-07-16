@@ -1,6 +1,6 @@
-# Life Improver - Backend
+# Shokunin - Backend
 
-This is the backend for the Life Improver application, a daily task tracker and challenge app. It's built with Node.js, Express, and Supabase.
+This is the backend for the Shokunin application, a daily task tracker and challenge app. It's built with Node.js, Express, and Supabase.
 
 ## Features
 
@@ -40,7 +40,7 @@ This is the backend for the Life Improver application, a daily task tracker and 
 1.  **Clone the repository:**
     ```bash
     git clone <repository-url>
-    cd Life-Improver/backend
+    cd Shokunin/backend
     ```
 
 2.  **Install dependencies:**
