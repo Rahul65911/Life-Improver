@@ -1,6 +1,6 @@
-# Life Improver - Frontend
+# Shokunin - Frontend
 
-This is the frontend for the Life Improver application, a daily task tracker and challenge app. It is built with React, Vite, TypeScript, and styled with Tailwind CSS.
+This is the frontend for the Shokunin application, a daily task tracker and challenge app. It is built with React, Vite, TypeScript, and styled with Tailwind CSS.
 
 ## Features
 
@@ -35,7 +35,7 @@ This is the frontend for the Life Improver application, a daily task tracker and
 
 1.  **Navigate to the frontend directory:**
     ```bash
-    cd Life-Improver/frontend
+    cd Shokunin/frontend
     ```
 
 2.  **Install dependencies:**
