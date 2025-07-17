@@ -72,6 +72,11 @@ router.post('/signin', async (req, res) => {
       return res.status(400).json({ error: error.message });
     }
 
+    // Check if email is confirmed
+    if (!data.user?.email_confirmed_at) {
+      return res.status(403).json({ error: 'Please verify your email before signing in.' });
+    }
+
     res.json({ 
       message: 'Signed in successfully',
       user: data.user,
@@ -80,6 +85,19 @@ router.post('/signin', async (req, res) => {
   } catch (error) {
     console.error('Signin error:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Magic link/email verification handler
+router.get('/verify-email', async (req, res) => {
+  try {
+    // Supabase will redirect here with access_token in the URL hash (handled by frontend)
+    // This backend route is for SSR/static confirmation if needed
+    // Optionally, you can use this to create the user profile if not present
+    // For now, just redirect to a static page
+    return res.redirect('/email-verified.html');
+  } catch (error) {
+    res.status(500).send('Verification failed.');
   }
 });
 

@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   name text NOT NULL,
   duration_hours decimal(4,2) NOT NULL,
   points integer NOT NULL,
+  description text,
   is_active boolean DEFAULT true,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
@@ -220,3 +221,61 @@ BEGIN
   END IF;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Create challenge_task_lists table
+CREATE TABLE challenge_task_lists (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  challenge_id UUID NOT NULL REFERENCES challenges(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  total_progress INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+  UNIQUE(challenge_id, user_id)
+);
+
+-- Create challenge_tasks table
+CREATE TABLE challenge_tasks (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  challenge_task_list_id UUID NOT NULL REFERENCES challenge_task_lists(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  duration_hours INTEGER NOT NULL,
+  points INTEGER NOT NULL,
+  description TEXT,
+  progress INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- Create function to update total progress
+CREATE OR REPLACE FUNCTION update_challenge_task_list_progress()
+RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE challenge_task_lists
+  SET total_progress = (
+    SELECT COALESCE(AVG(progress), 0)::INTEGER
+    FROM challenge_tasks
+    WHERE challenge_task_list_id = NEW.challenge_task_list_id
+  ),
+  updated_at = NOW()
+  WHERE id = NEW.challenge_task_list_id;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger to update total progress
+CREATE TRIGGER update_challenge_task_list_progress_trigger
+AFTER INSERT OR UPDATE OF progress ON challenge_tasks
+FOR EACH ROW
+EXECUTE FUNCTION update_challenge_task_list_progress();
+
+-- Add updated_at trigger for challenge_task_lists
+CREATE TRIGGER set_timestamp_challenge_task_lists
+BEFORE UPDATE ON challenge_task_lists
+FOR EACH ROW
+EXECUTE FUNCTION trigger_set_timestamp();
+
+-- Add updated_at trigger for challenge_tasks
+CREATE TRIGGER set_timestamp_challenge_tasks
+BEFORE UPDATE ON challenge_tasks
+FOR EACH ROW
+EXECUTE FUNCTION trigger_set_timestamp();

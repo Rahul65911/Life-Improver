@@ -12,7 +12,31 @@ router.get('/', authenticateToken, async (req, res) => {
       .select(`
         *,
         creator_profile:profiles!challenges_creator_id_fkey(username, display_name),
-        challenger_profile:profiles!challenges_challenger_id_fkey(username, display_name)
+        challenger_profile:profiles!challenges_challenger_id_fkey(username, display_name),
+        creator_task_list:challenge_task_lists!challenge_task_lists_challenge_id_fkey(
+          id,
+          tasks:challenge_tasks(
+            id,
+            name,
+            duration_hours,
+            points,
+            description,
+            progress
+          ),
+          total_progress
+        ),
+        challenger_task_list:challenge_task_lists!challenge_task_lists_challenge_id_fkey(
+          id,
+          tasks:challenge_tasks(
+            id,
+            name,
+            duration_hours,
+            points,
+            description,
+            progress
+          ),
+          total_progress
+        )
       `)
       .or(`creator_id.eq.${req.user.id},challenger_id.eq.${req.user.id}`)
       .order('created_at', { ascending: false });
@@ -31,7 +55,7 @@ router.get('/', authenticateToken, async (req, res) => {
 // Create challenge
 router.post('/', authenticateToken, async (req, res) => {
   try {
-    const { challenger_username, duration_type, duration_count } = req.body;
+    const { challenger_username, duration_type, duration_count, task_list } = req.body;
 
     // Find challenger by username
     const { data: challengerData, error: challengerError } = await supabase
@@ -67,7 +91,8 @@ router.post('/', authenticateToken, async (req, res) => {
         break;
     }
 
-    const { data, error } = await supabase
+    // Start a transaction
+    const { data: challenge, error: challengeError } = await supabase
       .from('challenges')
       .insert({
         creator_id: req.user.id,
@@ -79,11 +104,54 @@ router.post('/', authenticateToken, async (req, res) => {
       .select()
       .single();
 
-    if (error) {
-      return res.status(400).json({ error: error.message });
+    if (challengeError) {
+      return res.status(400).json({ error: challengeError.message });
     }
 
-    res.status(201).json({ challenge: data });
+    // Create task list for creator
+    const { data: taskList, error: taskListError } = await supabase
+      .from('challenge_task_lists')
+      .insert({
+        challenge_id: challenge.id,
+        user_id: req.user.id,
+        total_progress: 0,
+      })
+      .select()
+      .single();
+
+    if (taskListError) {
+      return res.status(400).json({ error: taskListError.message });
+    }
+
+    // Get tasks details
+    const { data: tasksData, error: tasksError } = await supabase
+      .from('tasks')
+      .select('*')
+      .in('id', task_list);
+
+    if (tasksError) {
+      return res.status(400).json({ error: tasksError.message });
+    }
+
+    // Create challenge tasks
+    const challengeTasks = tasksData.map(task => ({
+      challenge_task_list_id: taskList.id,
+      name: task.name,
+      duration_hours: task.duration_hours,
+      points: task.points,
+      description: task.description,
+      progress: 0,
+    }));
+
+    const { error: challengeTasksError } = await supabase
+      .from('challenge_tasks')
+      .insert(challengeTasks);
+
+    if (challengeTasksError) {
+      return res.status(400).json({ error: challengeTasksError.message });
+    }
+
+    res.status(201).json({ challenge });
   } catch (error) {
     console.error('Create challenge error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -94,10 +162,15 @@ router.post('/', authenticateToken, async (req, res) => {
 router.put('/:id/respond', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { accept } = req.body;
-    const status = accept ? 'active' : 'cancelled';
+    const { accept, task_list_id } = req.body;
 
-    const { data, error } = await supabase
+    if (accept && !task_list_id) {
+      return res.status(400).json({ error: 'Task list is required to accept challenge' });
+    }
+
+    const status = accept ? 'active' : 'rejected';
+
+    const { data: challenge, error: challengeError } = await supabase
       .from('challenges')
       .update({ status })
       .eq('id', id)
@@ -105,11 +178,56 @@ router.put('/:id/respond', authenticateToken, async (req, res) => {
       .select()
       .single();
 
-    if (error) {
-      return res.status(400).json({ error: error.message });
+    if (challengeError) {
+      return res.status(400).json({ error: challengeError.message });
     }
 
-    res.json({ challenge: data });
+    if (accept) {
+      // Get tasks from the selected task list
+      const { data: tasksData, error: tasksError } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('id', task_list_id);
+
+      if (tasksError) {
+        return res.status(400).json({ error: tasksError.message });
+      }
+
+      // Create task list for challenger
+      const { data: taskList, error: taskListError } = await supabase
+        .from('challenge_task_lists')
+        .insert({
+          challenge_id: challenge.id,
+          user_id: req.user.id,
+          total_progress: 0,
+        })
+        .select()
+        .single();
+
+      if (taskListError) {
+        return res.status(400).json({ error: taskListError.message });
+      }
+
+      // Create challenge tasks
+      const challengeTasks = tasksData.map(task => ({
+        challenge_task_list_id: taskList.id,
+        name: task.name,
+        duration_hours: task.duration_hours,
+        points: task.points,
+        description: task.description,
+        progress: 0,
+      }));
+
+      const { error: challengeTasksError } = await supabase
+        .from('challenge_tasks')
+        .insert(challengeTasks);
+
+      if (challengeTasksError) {
+        return res.status(400).json({ error: challengeTasksError.message });
+      }
+    }
+
+    res.json({ challenge });
   } catch (error) {
     console.error('Respond to challenge error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -219,6 +337,50 @@ router.post('/complete', authenticateToken, async (req, res) => {
     res.json({ message: `Completed ${challenges.length} challenges` });
   } catch (error) {
     console.error('Complete challenges error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update task progress
+router.put('/tasks/:taskId/progress', authenticateToken, async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { progress } = req.body;
+
+    if (typeof progress !== 'number' || progress < 0 || progress > 100) {
+      return res.status(400).json({ error: 'Progress must be a number between 0 and 100' });
+    }
+
+    // Verify user owns this task
+    const { data: task, error: taskError } = await supabase
+      .from('challenge_tasks')
+      .select('challenge_task_lists!inner(user_id)')
+      .eq('id', taskId)
+      .single();
+
+    if (taskError || !task) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    if (task.challenge_task_lists.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Not authorized to update this task' });
+    }
+
+    // Update task progress
+    const { data: updatedTask, error: updateError } = await supabase
+      .from('challenge_tasks')
+      .update({ progress })
+      .eq('id', taskId)
+      .select()
+      .single();
+
+    if (updateError) {
+      return res.status(400).json({ error: updateError.message });
+    }
+
+    res.json({ task: updatedTask });
+  } catch (error) {
+    console.error('Update task progress error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

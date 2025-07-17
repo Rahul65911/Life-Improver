@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Email Verified</title>
+  <style>
+    body { font-family: sans-serif; background: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; }
+    .container { background: white; padding: 2rem 3rem; border-radius: 1rem; box-shadow: 0 2px 16px #0001; text-align: center; }
+    a { color: #6366f1; text-decoration: none; font-weight: bold; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>✅ Email Verified!</h1>
+    <p>Your email address has been successfully verified.</p>
+    <a href={`${process.env.FRONTEND_URL || 'http://localhost:5173'}/signin`}>Go to Sign In</a>
+  </div>
+</body>
+</html>

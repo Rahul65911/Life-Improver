@@ -8,9 +8,19 @@ import {
   Calendar, 
   Users, 
   LogOut,
-  User
+  User,
+  Settings,
+  CreditCard
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import {
+  Separator
+} from "@/components/ui/separator"
 
 export function Layout() {
   const { user, signOut } = useAuth();
@@ -69,19 +79,52 @@ export function Layout() {
             </div>
 
             {/* User Menu */}
-            <div className="flex items-center space-x-4">
-              <div className="hidden md:flex items-center space-x-3">
-                <div className="h-8 w-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
-                  <User className="h-4 w-4 text-white" />
-                </div>
-                <span className="text-sm font-medium text-gray-700">{user?.email}</span>
-              </div>
-              <button
-                onClick={signOut}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <LogOut className="h-5 w-5" />
-              </button>
+            <div className="flex items-center">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="flex items-center space-x-2 p-2 hover:bg-gray-100 rounded-xl transition-colors">
+                    <div className="h-8 w-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
+                      <User className="h-4 w-4 text-white" />
+                    </div>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80" align="end">
+                  <div className="flex items-center gap-4 p-2">
+                    <div className="h-12 w-12 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
+                      <User className="h-6 w-6 text-white" />
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-semibold">{user?.email}</h4>
+                      <p className="text-xs text-muted-foreground">
+                        Free Plan
+                      </p>
+                    </div>
+                  </div>
+                  <Separator className="my-2" />
+                  <div className="space-y-1 p-2">
+                    <button
+                      className="w-full flex items-center space-x-2 text-sm px-2 py-1.5 hover:bg-gray-100 rounded-lg text-gray-700 transition-colors"
+                    >
+                      <Settings className="h-4 w-4" />
+                      <span>Settings</span>
+                    </button>
+                    <button
+                      className="w-full flex items-center space-x-2 text-sm px-2 py-1.5 hover:bg-gray-100 rounded-lg text-gray-700 transition-colors"
+                    >
+                      <CreditCard className="h-4 w-4" />
+                      <span>Billing</span>
+                    </button>
+                    <Separator className="my-2" />
+                    <button
+                      onClick={signOut}
+                      className="w-full flex items-center space-x-2 text-sm px-2 py-1.5 hover:bg-red-50 rounded-lg text-red-600 transition-colors"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      <span>Log out</span>
+                    </button>
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
         </div>

@@ -2,7 +2,30 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth.tsx';
 import { apiClient } from '../lib/api';
 import { format } from 'date-fns';
-import { Trophy, Clock, User, Plus, Check, X } from 'lucide-react';
+import { Trophy, Clock, User, Plus, Check, X, List, ArrowRight } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Progress } from "@/components/ui/progress";
+
+interface Task {
+  id: string;
+  name: string;
+  duration_hours: number;
+  points: number;
+  description?: string;
+  progress?: number;
+}
+
+interface TaskList {
+  id: string;
+  tasks: Task[];
+  total_progress: number;
+}
 
 interface Challenge {
   id: string;
@@ -20,12 +43,16 @@ interface Challenge {
     username: string;
     display_name: string;
   };
+  creator_task_list?: TaskList;
+  challenger_task_list?: TaskList;
 }
 
 interface ChallengeForm {
   challenger_username: string;
   duration_type: 'day' | 'week' | 'month' | 'year';
   duration_count: number;
+  task_list_id?: string;
+  selected_tasks?: string[];
 }
 
 interface UserSuggestion {
@@ -39,10 +66,13 @@ export function Challenges() {
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
+  const [userTasks, setUserTasks] = useState<Task[]>([]);
   const [formData, setFormData] = useState<ChallengeForm>({
     challenger_username: '',
     duration_type: 'day',
     duration_count: 1,
+    selected_tasks: [],
   });
   const [userSuggestions, setUserSuggestions] = useState<UserSuggestion[]>([]);
   const [selectedUser, setSelectedUser] = useState<UserSuggestion | null>(null);
@@ -54,6 +84,7 @@ export function Challenges() {
   useEffect(() => {
     if (user) {
       loadChallenges();
+      loadUserTasks();
     }
   }, [user]);
 
@@ -114,6 +145,15 @@ export function Challenges() {
     }
   }, [suggestionOpen]);
 
+  const loadUserTasks = async () => {
+    try {
+      const response = await apiClient.getTasks();
+      setUserTasks(response.tasks || []);
+    } catch (error) {
+      console.error('Error loading tasks:', error);
+    }
+  };
+
   const loadChallenges = async () => {
     try {
       const response = await apiClient.getChallenges();
@@ -126,14 +166,18 @@ export function Challenges() {
 
   const createChallenge = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedUser) return;
+    if (!selectedUser || !formData.selected_tasks?.length) return;
     try {
-      await apiClient.createChallenge(formData);
+      await apiClient.createChallenge({
+        ...formData,
+        task_list: formData.selected_tasks,
+      });
       setShowForm(false);
       setFormData({
         challenger_username: '',
         duration_type: 'day',
         duration_count: 1,
+        selected_tasks: [],
       });
       setSelectedUser(null);
       setUserSuggestions([]);
@@ -148,10 +192,11 @@ export function Challenges() {
     }
   };
 
-  const respondToChallenge = async (challengeId: string, accept: boolean) => {
+  const respondToChallenge = async (challengeId: string, accept: boolean, taskListId?: string) => {
     try {
-      await apiClient.respondToChallenge(challengeId, accept);
+      await apiClient.respondToChallenge(challengeId, accept, taskListId);
       loadChallenges();
+      setSelectedChallenge(null);
     } catch (error) {
       console.error('Error responding to challenge:', error);
     }
@@ -186,6 +231,113 @@ export function Challenges() {
     } else {
       return challenge.challenger_profile.display_name;
     }
+  };
+
+  const ChallengeDialog = ({ challenge }: { challenge: Challenge }) => {
+    const [selectedTaskList, setSelectedTaskList] = useState<string>();
+    const isCreator = user?.id === challenge.creator_id;
+    const userProfile = isCreator ? challenge.creator_profile : challenge.challenger_profile;
+    const opponentProfile = isCreator ? challenge.challenger_profile : challenge.creator_profile;
+    const userTaskList = isCreator ? challenge.creator_task_list : challenge.challenger_task_list;
+    const opponentTaskList = isCreator ? challenge.challenger_task_list : challenge.creator_task_list;
+
+    return (
+      <DialogContent className="sm:max-w-[800px]">
+        <DialogHeader>
+          <DialogTitle>Challenge Details</DialogTitle>
+          <DialogDescription>
+            {format(new Date(challenge.start_date), 'MMM d, yyyy')} - {format(new Date(challenge.end_date), 'MMM d, yyyy')}
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="grid grid-cols-2 gap-8 mt-4">
+          {/* Your Tasks */}
+          <div className="space-y-4">
+            <h3 className="font-semibold text-lg flex items-center gap-2">
+              <User className="h-5 w-5" />
+              Your Tasks
+            </h3>
+            {userTaskList ? (
+              <div className="space-y-3">
+                {userTaskList.tasks.map(task => (
+                  <div key={task.id} className="bg-white p-4 rounded-lg shadow-sm border">
+                    <div className="flex justify-between items-center mb-2">
+                      <h4 className="font-medium">{task.name}</h4>
+                      <span className="text-sm text-gray-500">{task.progress}%</span>
+                    </div>
+                    <Progress value={task.progress} className="h-2" />
+                  </div>
+                ))}
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium">Total Progress</span>
+                    <span>{userTaskList.total_progress}%</span>
+                  </div>
+                  <Progress value={userTaskList.total_progress} className="h-3 mt-2" />
+                </div>
+              </div>
+            ) : challenge.status === 'pending' && !isCreator ? (
+              <div className="space-y-4">
+                <select
+                  className="w-full p-2 border rounded-lg"
+                  value={selectedTaskList}
+                  onChange={(e) => setSelectedTaskList(e.target.value)}
+                >
+                  <option value="">Select a task list</option>
+                  {/* Add options for existing task lists */}
+                </select>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => respondToChallenge(challenge.id, true, selectedTaskList)}
+                    className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
+                  >
+                    Accept Challenge
+                  </button>
+                  <button
+                    onClick={() => respondToChallenge(challenge.id, false)}
+                    className="flex-1 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          {/* Opponent Tasks */}
+          <div className="space-y-4">
+            <h3 className="font-semibold text-lg flex items-center gap-2">
+              <User className="h-5 w-5" />
+              {opponentProfile.display_name}'s Tasks
+            </h3>
+            {opponentTaskList ? (
+              <div className="space-y-3">
+                {opponentTaskList.tasks.map(task => (
+                  <div key={task.id} className="bg-white p-4 rounded-lg shadow-sm border">
+                    <div className="flex justify-between items-center mb-2">
+                      <h4 className="font-medium">{task.name}</h4>
+                      <span className="text-sm text-gray-500">{task.progress}%</span>
+                    </div>
+                    <Progress value={task.progress} className="h-2" />
+                  </div>
+                ))}
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium">Total Progress</span>
+                    <span>{opponentTaskList.total_progress}%</span>
+                  </div>
+                  <Progress value={opponentTaskList.total_progress} className="h-3 mt-2" />
+                </div>
+              </div>
+            ) : (
+              <div className="h-full flex items-center justify-center text-gray-500">
+                No tasks selected yet
+              </div>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    );
   };
 
   if (loading) {
@@ -248,14 +400,41 @@ export function Challenges() {
                         setSuggestionOpen(false);
                       }}
                     >
-                      <span className="font-medium">{u.display_name}</span> <span className="text-gray-500">@{u.username}</span>
+                      <div className="font-medium">{u.display_name}</div>
+                      <div className="text-sm text-gray-500">@{u.username}</div>
                     </div>
                   ))}
                 </div>
               )}
-              {searchLoading && <div className="absolute right-2 top-10 text-xs text-gray-400">Searching...</div>}
             </div>
-            
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Select Tasks
+              </label>
+              <div className="mt-2 space-y-2">
+                {userTasks.map(task => (
+                  <label key={task.id} className="flex items-center space-x-3">
+                    <input
+                      type="checkbox"
+                      checked={formData.selected_tasks?.includes(task.id)}
+                      onChange={(e) => {
+                        const tasks = formData.selected_tasks || [];
+                        setFormData(prev => ({
+                          ...prev,
+                          selected_tasks: e.target.checked
+                            ? [...tasks, task.id]
+                            : tasks.filter(id => id !== task.id)
+                        }));
+                      }}
+                      className="h-4 w-4 text-blue-600 rounded border-gray-300"
+                    />
+                    <span>{task.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700">
@@ -263,16 +442,16 @@ export function Challenges() {
                 </label>
                 <select
                   value={formData.duration_type}
-                  onChange={(e) => setFormData(prev => ({ ...prev, duration_type: e.target.value as unknown as ChallengeForm['duration_type'] }))}
-                  className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  onChange={e => setFormData(prev => ({ ...prev, duration_type: e.target.value as any }))}
+                  className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                  <option value="day">Day(s)</option>
-                  <option value="week">Week(s)</option>
-                  <option value="month">Month(s)</option>
-                  <option value="year">Year(s)</option>
+                  <option value="day">Days</option>
+                  <option value="week">Weeks</option>
+                  <option value="month">Months</option>
+                  <option value="year">Years</option>
                 </select>
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700">
                   Duration Count
@@ -281,9 +460,8 @@ export function Challenges() {
                   type="number"
                   min="1"
                   value={formData.duration_count}
-                  onChange={(e) => setFormData(prev => ({ ...prev, duration_count: parseInt(e.target.value) }))}
-                  className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                  required
+                  onChange={e => setFormData(prev => ({ ...prev, duration_count: parseInt(e.target.value) || 1 }))}
+                  className="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
             </div>
@@ -291,105 +469,98 @@ export function Challenges() {
             <div className="flex justify-end space-x-3">
               <button
                 type="button"
-                onClick={() => setShowForm(false)}
-               className="px-6 py-3 border border-gray-300 rounded-xl shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-all"
+                onClick={() => {
+                  setShowForm(false);
+                  setFormData({
+                    challenger_username: '',
+                    duration_type: 'day',
+                    duration_count: 1,
+                    selected_tasks: [],
+                  });
+                  setSelectedUser(null);
+                  setUserSuggestions([]);
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
               >
                 Cancel
               </button>
-              {selectedUser && (
-                <button
-                  type="submit"
-                  className="px-6 py-3 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 transition-all"
-                >
-                  Send Challenge
-                </button>
-              )}
+              <button
+                type="submit"
+                disabled={!selectedUser || !formData.selected_tasks?.length}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Create Challenge
+              </button>
             </div>
           </form>
         </div>
       )}
 
-      {/* Challenges List */}
-      <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-lg border border-gray-200/50">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Your Challenges</h2>
-        </div>
-        <div className="p-6">
-          {challenges.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">
-              No challenges yet. Create your first challenge to get started!
-            </p>
-          ) : (
-            <div className="space-y-4">
-              {challenges.map((challenge) => (
-                <div key={challenge.id} className="border border-gray-200/50 rounded-xl p-4 bg-gray-50/50">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center space-x-4">
-                      <div className="flex items-center space-x-2">
-                        <User className="h-4 w-4 text-gray-400" />
-                        <span className="font-medium">
-                          {challenge.creator_id === user?.id 
-                            ? `You vs ${challenge.challenger_profile.display_name}`
-                            : `${challenge.creator_profile.display_name} vs You`
-                          }
-                        </span>
-                      </div>
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(challenge.status)}`}>
-                        {challenge.status.charAt(0).toUpperCase() + challenge.status.slice(1)}
-                      </span>
-                    </div>
-                    {/* Cancel button for creator if pending */}
-                    {challenge.status === 'pending' && challenge.creator_id === user?.id && (
-                      <button
-                        onClick={() => cancelChallenge(challenge.id)}
-                        className="inline-flex items-center px-3 py-2 border border-transparent text-xs font-medium rounded-lg text-white bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 transition-all"
-                      >
-                        <X className="h-3 w-3 mr-1" />
-                        Cancel
-                      </button>
-                    )}
-                    {/* Accept/Decline for challenger if pending */}
-                    {challenge.status === 'pending' && challenge.challenger_id === user?.id && (
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => respondToChallenge(challenge.id, true)}
-                          className="inline-flex items-center px-3 py-2 border border-transparent text-xs font-medium rounded-lg text-white bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 transition-all"
-                        >
-                          <Check className="h-3 w-3 mr-1" />
-                          Accept
-                        </button>
-                        <button
-                          onClick={() => respondToChallenge(challenge.id, false)}
-                          className="inline-flex items-center px-3 py-2 border border-transparent text-xs font-medium rounded-lg text-white bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 transition-all"
-                        >
-                          <X className="h-3 w-3 mr-1" />
-                          Decline
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600">
-                    <div className="flex items-center">
-                      <Clock className="h-4 w-4 mr-1" />
-                      <span>
-                        {format(new Date(challenge.start_date), 'MMM d')} - {format(new Date(challenge.end_date), 'MMM d, yyyy')}
-                      </span>
-                    </div>
-                    
-                    {challenge.status === 'completed' && (
-                      <div className="flex items-center">
-                        <Trophy className="h-4 w-4 mr-1" />
-                        <span>Winner: {getWinnerDisplay(challenge)}</span>
-                      </div>
-                    )}
-                  </div>
+      {/* Challenge List */}
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        {challenges.map(challenge => (
+          <div
+            key={challenge.id}
+            onClick={() => setSelectedChallenge(challenge)}
+            className="bg-white/80 backdrop-blur-md p-6 rounded-2xl shadow-lg border border-gray-200/50 hover:shadow-xl transition-all cursor-pointer"
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white">
+                  <Trophy className="h-5 w-5" />
                 </div>
-              ))}
+                <div>
+                  <h3 className="font-semibold text-gray-900">
+                    {challenge.creator_id === user?.id
+                      ? challenge.challenger_profile.display_name
+                      : challenge.creator_profile.display_name}
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    {challenge.creator_id === user?.id ? 'Challenged by you' : 'Challenged you'}
+                  </p>
+                </div>
+              </div>
+              <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(challenge.status)}`}>
+                {challenge.status}
+              </span>
             </div>
-          )}
-        </div>
+
+            <div className="mt-4 space-y-2 text-sm text-gray-600">
+              <div className="flex items-center space-x-2">
+                <Clock className="h-4 w-4" />
+                <span>
+                  {format(new Date(challenge.start_date), 'MMM d')} - {format(new Date(challenge.end_date), 'MMM d, yyyy')}
+                </span>
+              </div>
+              {challenge.status === 'completed' && (
+                <div className="flex items-center space-x-2">
+                  <Trophy className="h-4 w-4 text-yellow-500" />
+                  <span>Winner: {getWinnerDisplay(challenge)}</span>
+                </div>
+              )}
+            </div>
+
+            {challenge.status === 'pending' && challenge.creator_id === user?.id && (
+              <div className="mt-4">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    cancelChallenge(challenge.id);
+                  }}
+                  className="text-sm text-red-600 hover:text-red-700"
+                >
+                  Cancel Challenge
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
       </div>
+
+      {/* Challenge Details Dialog */}
+      <Dialog open={!!selectedChallenge} onOpenChange={(open) => !open && setSelectedChallenge(null)}>
+        {selectedChallenge && <ChallengeDialog challenge={selectedChallenge} />}
+      </Dialog>
     </div>
   );
 }

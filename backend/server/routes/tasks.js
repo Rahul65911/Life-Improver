@@ -28,7 +28,7 @@ router.get('/', authenticateToken, async (req, res) => {
 // Create task
 router.post('/', authenticateToken, async (req, res) => {
   try {
-    const { name, duration_hours, points } = req.body;
+    const { name, duration_hours, points, description } = req.body;
 
     const { data, error } = await supabase
       .from('tasks')
@@ -37,6 +37,7 @@ router.post('/', authenticateToken, async (req, res) => {
         name,
         duration_hours,
         points,
+        description,
       })
       .select()
       .single();
@@ -56,11 +57,11 @@ router.post('/', authenticateToken, async (req, res) => {
 router.put('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, duration_hours, points } = req.body;
+    const { name, duration_hours, points, description } = req.body;
 
     const { data, error } = await supabase
       .from('tasks')
-      .update({ name, duration_hours, points })
+      .update({ name, duration_hours, points, description })
       .eq('id', id)
       .eq('user_id', req.user.id)
       .select()

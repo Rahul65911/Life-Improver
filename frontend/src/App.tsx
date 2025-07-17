@@ -9,6 +9,8 @@ import { Challenges } from './pages/Challenges';
 import { Calendar } from './pages/Calendar';
 import { Users } from './pages/Users';
 import { ResetPassword } from './pages/ResetPassword.tsx';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -52,6 +54,7 @@ function App() {
   return (
     <AuthProvider>
       <AppContent />
+      <ToastContainer position="top-center" autoClose={4000} aria-label="Notification" />
     </AuthProvider>
   );
 }

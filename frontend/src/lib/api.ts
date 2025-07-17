@@ -1,6 +1,8 @@
-import axios, { AxiosRequestConfig } from 'axios';
+import axios, { AxiosRequestConfig, AxiosError } from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000; // 1 second
 
 class ApiClient {
   private baseURL: string;
@@ -20,7 +22,11 @@ class ApiClient {
     }
   }
 
-  private async request(endpoint: string, options: AxiosRequestConfig = {}) {
+  private delay(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  private async request<T = any>(endpoint: string, options: AxiosRequestConfig = {}, retryCount = 0): Promise<T> {
     const url = `${this.baseURL}${endpoint}`;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -29,6 +35,7 @@ class ApiClient {
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
+
     try {
       const response = await axios({
         url,
@@ -36,14 +43,31 @@ class ApiClient {
         headers,
         data: options.data,
         params: options.params,
-        withCredentials: false,
+        withCredentials: true,
       });
       return response.data;
-    } catch (error: any) {
-      if (error.response && error.response.data) {
-        throw new Error(error.response.data.error || 'Network error');
+    } catch (error) {
+      if (error instanceof AxiosError) {
+        // Handle rate limiting
+        if (error.response?.status === 429 && retryCount < MAX_RETRIES) {
+          const waitTime = RETRY_DELAY * Math.pow(2, retryCount);
+          await this.delay(waitTime);
+          return this.request(endpoint, options, retryCount + 1);
+        }
+
+        // Handle token expiration
+        if (error.response?.status === 401) {
+          this.setToken(null);
+          window.location.href = '/';
+          throw new Error('Session expired. Please sign in again.');
+        }
+
+        if (error.response?.data?.error) {
+          throw new Error(error.response.data.error);
+        }
       }
-      throw new Error('Network error');
+      
+      throw new Error('Network error. Please try again later.');
     }
   }
 
@@ -81,14 +105,14 @@ class ApiClient {
     return this.request('/tasks');
   }
 
-  async createTask(task: { name: string; duration_hours: number; points: number }) {
+  async createTask(task: { name: string; duration_hours: number; points: number; description?: string }) {
     return this.request('/tasks', {
       method: 'POST',
       data: task,
     });
   }
 
-  async updateTask(id: string, task: { name: string; duration_hours: number; points: number }) {
+  async updateTask(id: string, task: { name: string; duration_hours: number; points: number; description?: string }) {
     return this.request(`/tasks/${id}`, {
       method: 'PUT',
       data: task,
@@ -122,6 +146,7 @@ class ApiClient {
     challenger_username: string;
     duration_type: string;
     duration_count: number;
+    task_list: string[];
   }) {
     return this.request('/challenges', {
       method: 'POST',
@@ -129,15 +154,22 @@ class ApiClient {
     });
   }
 
-  async respondToChallenge(id: string, accept: boolean) {
+  async respondToChallenge(id: string, accept: boolean, taskListId?: string) {
     return this.request(`/challenges/${id}/respond`, {
       method: 'PUT',
-      data: { accept },
+      data: { accept, task_list_id: taskListId },
     });
   }
 
   async cancelChallenge(id: string) {
     return this.request(`/challenges/${id}/cancel`, { method: 'PUT' });
+  }
+
+  async updateChallengeTaskProgress(taskId: string, progress: number) {
+    return this.request(`/challenges/tasks/${taskId}/progress`, {
+      method: 'PUT',
+      data: { progress },
+    });
   }
 
   // User endpoints
